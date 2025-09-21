@@ -16,6 +16,7 @@ def autoencoder(input_dims, hidden_layers, latent_dims):
     Returns: encoder, decoder, auto
     """
 
+    # Encoder
     X_input = keras.Input(shape=(input_dims,))
     hidden_ly = keras.layers.Dense(units=hidden_layers[0], activation='relu')
     Y_prev = hidden_ly(X_input)
@@ -23,9 +24,10 @@ def autoencoder(input_dims, hidden_layers, latent_dims):
         hidden_ly = keras.layers.Dense(units=hidden_layers[i],
                                        activation='relu')
         Y_prev = hidden_ly(Y_prev)
-    latent_ly = keras.layers.Dense(units=latent_dims, activation=None)
-    z_mean = latent_ly(Y_prev)
-    z_log_sigma = latent_ly(Y_prev)
+    
+    # Separate layers for mean and log variance
+    z_mean = keras.layers.Dense(units=latent_dims, activation=None)(Y_prev)
+    z_log_sigma = keras.layers.Dense(units=latent_dims, activation=None)(Y_prev)
 
     def sampling(args):
         """Sampling similar points in latent space"""
@@ -40,6 +42,7 @@ def autoencoder(input_dims, hidden_layers, latent_dims):
                                                           z_log_sigma])
     encoder = keras.Model(X_input, [z, z_mean, z_log_sigma])
 
+    # Decoder
     X_decode = keras.Input(shape=(latent_dims,))
     hidden_ly_deco = keras.layers.Dense(units=hidden_layers[-1],
                                         activation='relu')
@@ -52,19 +55,23 @@ def autoencoder(input_dims, hidden_layers, latent_dims):
     output = last_ly(Y_prev)
     decoder = keras.Model(X_decode, output)
 
-    e_output = encoder(X_input)[-1]
-    d_output = decoder(e_output)
+    # Autoencoder - use the sampled latent vector (first output)
+    encoder_outputs = encoder(X_input)
+    z_sample = encoder_outputs[0]
+    z_mean_auto = encoder_outputs[1]
+    z_log_sigma_auto = encoder_outputs[2]
+    
+    d_output = decoder(z_sample)
     auto = keras.Model(X_input, d_output)
 
     def vae_loss(x, x_decoder_mean):
         x_loss = keras.backend.binary_crossentropy(x, x_decoder_mean)
         x_loss = keras.backend.sum(x_loss, axis=1)
-        kl_loss = - 0.5 * keras.backend.mean(1 + z_log_sigma -
-                                             keras.backend.square(z_mean) -
-                                             keras.backend.exp(z_log_sigma),
+        kl_loss = - 0.5 * keras.backend.mean(1 + z_log_sigma_auto -
+                                             keras.backend.square(z_mean_auto) -
+                                             keras.backend.exp(z_log_sigma_auto),
                                              axis=-1)
         return x_loss + kl_loss
 
     auto.compile(loss=vae_loss, optimizer='adam')
     return encoder, decoder, auto
-
